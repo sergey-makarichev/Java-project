@@ -1,1 +1,1 @@
-# Java-project
+# Игра Gomoku с использованием Java RMI
