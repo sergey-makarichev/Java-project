@@ -1,178 +1,126 @@
-package server;
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package Server;
 
-import Client.Piece;
-import Client.Color;
-import java.rmi.Naming;
-import java.rmi.server.UnicastRemoteObject;
-import java.rmi.RemoteException;
-import java.rmi.Remote;
-import java.rmi.registry.LocateRegistry;
-import java.rmi.registry.Registry;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.GregorianCalendar;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Vector;
+import javax.jws.WebMethod;
+import javax.jws.WebService;
+import javax.xml.ws.Endpoint;
+import org.glassfish.pfl.basic.contain.Pair;
 
 /**
  *
  * @author Сергей
  */
-public class Server extends UnicastRemoteObject implements Hello {
-    private final static int ROWS = 10;
-    private final static int COLUMNS = 10;
-    private Color[][] pieces;
-    private Color whoseColorMotion = Color.WHITE;
-    private Color colorWin = Color.NOT_USED;
-    private Vector motions;
-    private boolean black = false;
-    private boolean white = false;
+@WebService
+public class Server {
+    private Map<Integer, BarberService> listOfServices = new HashMap<>();
+    private List<Pair<Integer,FreeTimeRecord>> freeTimes = new  ArrayList();
+    public static final int port = 1986;
     
-    public Server() throws java.rmi.RemoteException {
-        super();
-        pieces = new Color[COLUMNS][ROWS];
-        motions = new Vector();
-        //motions.add(ref)
-    }
-    public static void main(String args[]) {
+    @WebMethod
+    public int addNewService(String nameService, int price, int duration) {
+        int servHash = 0;
         try {
-            Server obj = new Server();
-            //Registry registry = LocateRegistry.getRegistry(); // подключение к уже существующему сервису имён
-            Registry registry = LocateRegistry.createRegistry(8080);
-            registry.bind("HelloServer", obj);
-            //Naming.rebind("rmi://localhost/HelloServer", obj);
-            System.out.println("Server ready");
-        } catch (Exception e) {
-            System.err.println("Server exception: " + e.toString());
-            e.printStackTrace();
+            BarberService serv = new BarberService(nameService, price, duration);
+            servHash = serv.hashCode();
+            if(listOfServices.containsKey(servHash))
+                return -1;
+            listOfServices.put(servHash, serv);
+        }catch(Exception ex){
+            System.out.println(ex.getMessage());
         }
+        return servHash;
     }
     
-    private boolean fiveInHorisontal(int y, Color color) {
-        int counter = 0;
-        for(int i = 0; i < COLUMNS; i++) {
-            if(pieces[i][y]== color) {
-                counter++;
-                System.out.println("counter " + counter);
-                if(counter == 5)
-                    return true;
-            }else {
-                counter = 0;
-            }
-        }
-        return false;
+    @WebMethod
+    public boolean deleteService(int id) {
+        if(listOfServices.isEmpty() || !listOfServices.containsKey(id))
+            return false;
+        listOfServices.remove(id);
+        return true;
     }
     
-    private boolean fiveInVertical(int x, Color color) {
-        int counter = 0;
-        for(int i = 0; i < COLUMNS; i++) {
-            if(pieces[x][i]== color) {
-                counter++;
-                if(counter == 5)
-                    return true;
-            }else {
-                counter = 0;
-            }
-        }
-        return false;
+    @WebMethod
+    public String getListOfServices() {
+        List<BarberService> valueList = new ArrayList<>(listOfServices.values());
+        String tmp = "List of services\n";
+        for(int i = 0; i < valueList.size(); i++)
+            tmp = tmp + valueList.get(i).toString() + "\n";
+        return tmp;
     }
     
-    private boolean fiveInDiagonal(int x, int y, Color color) {
-        int i = x;
-        int j = y;
-        while(i > 0 && j < COLUMNS - 1) {
-            i--;
-            j++;
-        }
-        int counter = 0;
-        for( ; i < COLUMNS && j >= 0; i++, j--) {
-            if(pieces[i][j]== color) {
-                counter++;
-                System.out.println("counter " + counter);
-                if(counter == 5)
-                    return true;
-            }else {
-                counter = 0;
+    @WebMethod
+    public String getFreeTimes(int year, int month, int day) throws Exception {
+        Date date = new Date(year,month, day);
+        int dateHash = date.hashCode();
+        String tmp = "Free times:\n"; 
+        if(freeTimes.isEmpty())
+            return tmp + "there is no free time for this date\n";
+        for(int i = 0; i < freeTimes.size(); i++) {
+            if(freeTimes.get(i).first() == dateHash &&
+                    !freeTimes.get(i).second().isBusy()) {
+                System.out.println(freeTimes.get(i).second().isBusy());
+                tmp = tmp + freeTimes.get(i).second().toString() + "\n\n";
             }
         }
-        i = x;
-        j = y;
-        while(i < ROWS - 1 && j < COLUMNS - 1) {
-            i++;
-            j++;
+        return tmp;
+    }
+    
+    @WebMethod
+    public String signUp(int year, int month, int day, int hour, int minute, int id) throws Exception {
+        Date date = new Date(year, month, day);
+        BarberService serv = listOfServices.get(id);
+        if(serv == null)
+            return "such service does not exist\n";
+        int dateHash = date.hashCode();
+        FreeTimeRecord tmp = new FreeTimeRecord(date, hour, minute, serv.getDurationInMinutes());
+        for(int i = 0; i < freeTimes.size(); i++) {
+            if(freeTimes.get(i).first() == dateHash &&
+                    !freeTimes.get(i).second().isBusy() &&
+                    tmp.equals(freeTimes.get(i).second())) {
+                freeTimes.get(i).second().signUp();
+                return "Succesful! \n" + serv.toString() + "record ID: " + freeTimes.get(i).second().hashCode() + "\n";
+            }
         }
-        counter = 0;
-        for( ; i >= 0 && j >= 0; i--, j--) {
-            if(pieces[i][j]== color) {
-                counter++;
-                System.out.println("counter " + counter);
-                if(counter == 5)
-                    return true;
-            }else {
-                counter = 0;
+        return "Failed! \n";
+    }
+    
+    @WebMethod
+    public boolean canselSignUp(int id) {
+        for(int i = 0; i < freeTimes.size(); i++) {
+            if(id == freeTimes.get(i).second().hashCode()) {
+                freeTimes.get(i).second().cancelRecording();
+                return true;
             }
         }
         return false;
     }
     
-    public boolean isWin(int x, int y, Color color) {
-        if(fiveInHorisontal(y, color) || fiveInVertical(x, color) || fiveInDiagonal(x, y, color))
-            return true;
-        return false;
-    }
-
-    @Override
-    public void motion(Piece p) throws RemoteException {
-        int x = p.getX();
-        int y = p.getY();
-        Color color = p.getColor();
-        pieces[x][y] = color;
-        motions.add(p);
-        System.out.println("responce: x = " + x + " y: "+ y + " color: "+color + " hash "+p.hashCode());
-        if(color == Color.BLACK)
-            whoseColorMotion = Color.WHITE;
-        else if(color == Color.WHITE)
-            whoseColorMotion = Color.BLACK;
-        if(isWin(x,y,color)) {
-            colorWin = color;
-        }
-    }
-
-    @Override
-    public boolean changeColor(String color)  throws RemoteException {
-        if (color.equals("black") && !black) {
-            black = true;
-            return true;
-        } else if(color.equals("white") && !white) {
-            white = true;
-            return true;
-        }
-        return false;
-    }
-
-    @Override
-    public Piece lastMotion() throws RemoteException {
-        if(motions.isEmpty())
-            return null;
-        return (Piece)motions.lastElement();
-    }
-
-    @Override
-    public Color whoseMove() throws RemoteException {
-        return whoseColorMotion;
-    }
-
-    @Override
-    public Color isGameOver() throws RemoteException {
-        return colorWin;
-    }
-
-    @Override
-    public void restartServer() throws RemoteException {
-        motions.clear();
-        for (int i = 0; i < COLUMNS; i++) {
-            for (int j = 0; j < ROWS; j++) {
-                pieces[i][j] = Color.NOT_USED;
+    private void init() throws Exception {
+        for(int i = 1; i < 7; i++) {
+            Date date = new Date(2021, 11, i);
+            for(int j = 10; j < 15; j++) {
+                FreeTimeRecord times = new FreeTimeRecord(date, j, 0, 35 + j);
+                Pair p = new Pair<>(date.hashCode(),times);
+                freeTimes.add(p);
             }
         }
-        colorWin = Color.NOT_USED;
-        Color whoseColorMotion = Color.WHITE;
+    }
+    public static void main(String[] args) throws Exception {
+        Server server = new Server();
+        server.init();
+        String url = String.format("http://localhost:%d/Barber", port);
+        Endpoint.publish(url, server);
     }
     
 }
